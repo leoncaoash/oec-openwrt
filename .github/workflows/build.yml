@@ -1,0 +1,31 @@
+
+name: OEC OpenWrt Source Check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout official OpenWrt
+        uses: actions/checkout@v4
+        with:
+          repository: openwrt/openwrt
+          ref: v25.12.6
+          path: openwrt
+
+      - name: Check OEC device support
+        shell: bash
+        run: |
+          cd openwrt
+          echo "Checking OEC board support..."
+
+          if grep -R -n -E \
+            'onething,oec|onething_oec' \
+            target/linux/rockchip; then
+            echo "OEC references found."
+          else
+            echo "OEC device definition not found."
+            echo "Dedicated board support is required."
+          fi
