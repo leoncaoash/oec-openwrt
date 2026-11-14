@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  prepare:
+  configure:
     runs-on: ubuntu-24.04
 
     steps:
@@ -21,54 +21,39 @@ jobs:
           ref: v25.12.6
           path: openwrt
 
-      - name: Prepare OEC kernel support
-        shell: bash
+      - name: Register OEC device
         run: |
-          set -euo pipefail
+          set -e
+          cat project/files/oec.mk \
+            >> openwrt/target/linux/rockchip/image/armv8.mk
 
-          ROCKCHIP=openwrt/target/linux/rockchip
-          DTS=rk3566-onething-edge-cube.dts
-          KDIR=arch/arm64/boot/dts/rockchip
+          grep -q 'TARGET_DEVICES += onething_oec' \
+            openwrt/target/linux/rockchip/image/armv8.mk
 
-          mkdir -p "$ROCKCHIP/files/$KDIR"
-          mkdir -p "$ROCKCHIP/patches-6.12"
+          echo "OEC device registered"
 
-          cp "project/files/$DTS" \
-            "$ROCKCHIP/files/$KDIR/$DTS"
+      - name: Configure OpenWrt
+        run: |
+          set -e
+          cd openwrt
 
-          cat > "$ROCKCHIP/patches-6.12/999-oec-dtb.patch" <<'EOF'
-          --- a/arch/arm64/boot/dts/rockchip/Makefile
-          +++ b/arch/arm64/boot/dts/rockchip/Makefile
-          @@ -1,3 +1,4 @@
-           # SPDX-License-Identifier: GPL-2.0
-          +dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-onething-edge-cube.dtb
+          cat > .config <<'EOF'
+          CONFIG_TARGET_rockchip=y
+          CONFIG_TARGET_rockchip_armv8=y
+          CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_onething_oec=y
           EOF
 
-          echo "OEC kernel files prepared"
+          make defconfig
 
-      - name: Download Linux source
-        run: |
-          curl -fL --retry 3 \
-            https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.112.tar.xz \
-            -o linux.tar.xz
-          tar -xf linux.tar.xz
+          grep -qx \
+            'CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_onething_oec=y' \
+            .config
 
-      - name: Check kernel patch
-        shell: bash
-        run: |
-          set -euo pipefail
+          echo "OEC build target configured successfully"
 
-          cd linux-6.12.112
-
-          patch --dry-run -p1 \
-            < ../openwrt/target/linux/rockchip/patches-6.12/999-oec-dtb.patch
-
-          echo "OEC kernel patch: OK"
-
-      - name: Save prepared files
+      - name: Save configuration
         uses: actions/upload-artifact@v4
         with:
-          name: oec-kernel-support
-          path: |
-            openwrt/target/linux/rockchip/files/
-            openwrt/target/linux/rockchip/patches-6.12/999-oec-dtb.patch
+          name: oec-build-config
+          path: openwrt/.config
+          include-hidden-files: true
