@@ -7,18 +7,38 @@ on:
 jobs:
   prepare:
     runs-on: ubuntu-24.04
+
     steps:
-      - name: Download OEC device tree
+      - name: Checkout project
+        uses: actions/checkout@v4
+        with:
+          path: project
+
+      - name: Checkout OpenWrt
+        uses: actions/checkout@v4
+        with:
+          repository: openwrt/openwrt
+          ref: v25.12.6
+          path: openwrt
+
+      - name: Check OEC source
         run: |
-          mkdir -p oec
-          curl -fL --retry 3 \
-            https://raw.githubusercontent.com/torvalds/linux/master/arch/arm64/boot/dts/rockchip/rk3566-onething-edge-cube.dts \
-            -o oec/rk3566-onething-edge-cube.dts
+          set -e
 
-          test -s oec/rk3566-onething-edge-cube.dts
+          DTS=project/files/rk3566-onething-edge-cube.dts
+          ROCKCHIP=openwrt/target/linux/rockchip
 
-      - name: Save OEC device tree
+          test -s "$DTS"
+          grep -q 'onething,edge-cube' "$DTS"
+          test -f "$ROCKCHIP/image/armv8.mk"
+          test -f "$ROCKCHIP/Makefile"
+
+          echo "OEC device tree: OK"
+          echo "OpenWrt Rockchip target: OK"
+          echo "Source preparation: OK"
+
+      - name: Save device tree
         uses: actions/upload-artifact@v4
         with:
-          name: oec-device-tree
-          path: oec/
+          name: oec-source
+          path: project/files/
