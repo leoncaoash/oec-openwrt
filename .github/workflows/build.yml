@@ -5,40 +5,52 @@ on:
   workflow_dispatch:
 
 jobs:
-  prepare:
+  build-dtb:
     runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
-        with:
-          path: project
 
-      - name: Checkout OpenWrt
-        uses: actions/checkout@v4
-        with:
-          repository: openwrt/openwrt
-          ref: v25.12.6
-          path: openwrt
-
-      - name: Check OEC source
+      - name: Install build tools
         run: |
-          set -e
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            make bc bison flex \
+            libssl-dev libelf-dev
 
-          DTS=project/files/rk3566-onething-edge-cube.dts
-          ROCKCHIP=openwrt/target/linux/rockchip
+      - name: Download Linux kernel
+        run: |
+          curl -fL --retry 3 \
+            https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.112.tar.xz \
+            -o linux.tar.xz
+          tar -xf linux.tar.xz
+          mv linux-6.12.112 linux
 
-          test -s "$DTS"
-          grep -q 'onething,edge-cube' "$DTS"
-          test -f "$ROCKCHIP/image/armv8.mk"
-          test -f "$ROCKCHIP/Makefile"
+      - name: Prepare OEC device tree
+        run: |
+          cp files/rk3566-onething-edge-cube.dts \
+            linux/arch/arm64/boot/dts/rockchip/
 
-          echo "OEC device tree: OK"
-          echo "OpenWrt Rockchip target: OK"
-          echo "Source preparation: OK"
+          echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-onething-edge-cube.dtb' \
+            >> linux/arch/arm64/boot/dts/rockchip/Makefile
 
-      - name: Save device tree
+      - name: Compile device tree
+        run: |
+          cd linux
+          make ARCH=arm64 defconfig
+          make -j2 ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            dtbs
+
+          test -s \
+            arch/arm64/boot/dts/rockchip/rk3566-onething-edge-cube.dtb
+
+          echo "OEC DTB compilation successful"
+
+      - name: Save OEC DTB
         uses: actions/upload-artifact@v4
         with:
-          name: oec-source
-          path: project/files/
+          name: oec-dtb
+          path: linux/arch/arm64/boot/dts/rockchip/rk3566-onething-edge-cube.dtb
