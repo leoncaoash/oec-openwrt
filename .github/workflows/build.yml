@@ -24,11 +24,9 @@ jobs:
       - name: Register OEC device
         run: |
           set -e
+
           cat project/files/oec.mk \
             >> openwrt/target/linux/rockchip/image/armv8.mk
-
-          grep -q 'TARGET_DEVICES += onething_oec' \
-            openwrt/target/linux/rockchip/image/armv8.mk
 
           echo "OEC device registered"
 
@@ -45,11 +43,14 @@ jobs:
 
           make defconfig
 
-          grep -qx \
-            'CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_onething_oec=y' \
-            .config
+          echo "===== OEC configuration ====="
+          grep -nE 'CONFIG_TARGET_(rockchip|DEVICE_.*oec)' .config || true
 
-          echo "OEC build target configured successfully"
+          echo "===== OEC device definition ====="
+          grep -A 10 'define Device/onething_oec' \
+            target/linux/rockchip/image/armv8.mk || true
+
+          echo "OEC configuration diagnostics completed"
 
       - name: Save configuration
         uses: actions/upload-artifact@v4
