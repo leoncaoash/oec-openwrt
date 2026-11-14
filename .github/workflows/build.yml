@@ -1,31 +1,24 @@
 
-name: OEC OpenWrt Source Check
+name: OEC OpenWrt
 
 on:
   workflow_dispatch:
 
 jobs:
-  check-source:
+  prepare:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout official OpenWrt
-        uses: actions/checkout@v4
-        with:
-          repository: openwrt/openwrt
-          ref: v25.12.6
-          path: openwrt
-
-      - name: Check OEC device support
-        shell: bash
+      - name: Download OEC device tree
         run: |
-          cd openwrt
-          echo "Checking OEC board support..."
+          mkdir -p oec
+          curl -fL --retry 3 \
+            https://raw.githubusercontent.com/torvalds/linux/master/arch/arm64/boot/dts/rockchip/rk3566-onething-edge-cube.dts \
+            -o oec/rk3566-onething-edge-cube.dts
 
-          if grep -R -n -E \
-            'onething,oec|onething_oec' \
-            target/linux/rockchip; then
-            echo "OEC references found."
-          else
-            echo "OEC device definition not found."
-            echo "Dedicated board support is required."
-          fi
+          test -s oec/rk3566-onething-edge-cube.dts
+
+      - name: Save OEC device tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: oec-device-tree
+          path: oec/
