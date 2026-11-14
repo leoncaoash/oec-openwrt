@@ -5,52 +5,50 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-dtb:
+  prepare:
     runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
+        with:
+          path: project
 
-      - name: Install build tools
+      - name: Checkout OpenWrt
+        uses: actions/checkout@v4
+        with:
+          repository: openwrt/openwrt
+          ref: v25.12.6
+          path: openwrt
+
+      - name: Add OEC device files
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            make bc bison flex \
-            libssl-dev libelf-dev
+          set -e
 
-      - name: Download Linux kernel
-        run: |
-          curl -fL --retry 3 \
-            https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.112.tar.xz \
-            -o linux.tar.xz
-          tar -xf linux.tar.xz
-          mv linux-6.12.112 linux
+          ROCKCHIP=openwrt/target/linux/rockchip
 
-      - name: Prepare OEC device tree
-        run: |
-          cp files/rk3566-onething-edge-cube.dts \
-            linux/arch/arm64/boot/dts/rockchip/
+          test -s project/files/oec.mk
+          test -s project/files/rk3566-onething-edge-cube.dts
 
-          echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-onething-edge-cube.dtb' \
-            >> linux/arch/arm64/boot/dts/rockchip/Makefile
+          mkdir -p "$ROCKCHIP/files/arch/arm64/boot/dts/rockchip"
 
-      - name: Compile device tree
-        run: |
-          cd linux
-          make ARCH=arm64 defconfig
-          make -j2 ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            dtbs
+          cp project/files/rk3566-onething-edge-cube.dts \
+            "$ROCKCHIP/files/arch/arm64/boot/dts/rockchip/"
 
-          test -s \
-            arch/arm64/boot/dts/rockchip/rk3566-onething-edge-cube.dtb
+          cat project/files/oec.mk \
+            >> "$ROCKCHIP/image/armv8.mk"
 
-          echo "OEC DTB compilation successful"
+          grep -q 'define Device/onething_oec' \
+            "$ROCKCHIP/image/armv8.mk"
 
-      - name: Save OEC DTB
+          echo "OEC device configuration: OK"
+          echo "OEC device tree staging: OK"
+
+      - name: Save prepared source
         uses: actions/upload-artifact@v4
         with:
-          name: oec-dtb
-          path: linux/arch/arm64/boot/dts/rockchip/rk3566-onething-edge-cube.dtb
+          name: oec-prepared-files
+          path: |
+            openwrt/target/linux/rockchip/image/armv8.mk
+            openwrt/target/linux/rockchip/files/
