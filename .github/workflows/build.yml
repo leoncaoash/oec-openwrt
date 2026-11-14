@@ -7,6 +7,7 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-24.04
+    timeout-minutes: 300
 
     steps:
       - name: Checkout project
@@ -30,7 +31,20 @@ jobs:
             libncurses-dev libssl-dev libelf-dev \
             python3 python3-setuptools \
             rsync unzip zlib1g-dev file wget \
-            swig time xsltproc zstd
+            swig time xsltproc zstd \
+            curl ca-certificates
+
+      - name: Check build environment
+        run: |
+          set -e
+          echo "===== Disk space ====="
+          df -h .
+
+          echo "===== Build tools ====="
+          command -v gcc
+          command -v flex
+          command -v m4
+          m4 --version | head -n 1
 
       - name: Configure OpenWrt
         run: |
@@ -57,6 +71,31 @@ jobs:
 
           echo "OEC target configured"
 
+      - name: Build OpenWrt tools
+        run: |
+          cd openwrt
+          make -j2 V=s tools/install
+
+      - name: Build OpenWrt toolchain
+        run: |
+          cd openwrt
+          make -j2 V=s toolchain/install
+
+      - name: Verify cross compiler
+        run: |
+          set -e
+
+          echo "===== Cross compiler ====="
+
+          find openwrt/staging_dir \
+            -type f \
+            -name '*gcc' \
+            -path '*/bin/*' \
+            -print
+
+          echo "===== Disk space ====="
+          df -h .
+
       - name: Prepare OpenWrt kernel
         run: |
           cd openwrt
@@ -78,11 +117,16 @@ jobs:
           cp project/files/rk3566-onething-edge-cube.dts \
             "$KDIR/"
 
-          printf '%s\n' \
-            'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-onething-edge-cube.dtb' \
-            >> "$KDIR/Makefile"
+          if ! grep -q \
+            'rk3566-onething-edge-cube.dtb' \
+            "$KDIR/Makefile"; then
 
-          echo "OEC kernel source integrated"
+            printf '%s\n' \
+              'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-onething-edge-cube.dtb' \
+              >> "$KDIR/Makefile"
+          fi
+
+          echo "OEC device tree integrated"
 
       - name: Compile OpenWrt kernel
         run: |
