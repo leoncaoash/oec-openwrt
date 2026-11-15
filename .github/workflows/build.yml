@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-kernel:
+  build-wireless:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
 
@@ -34,18 +34,6 @@ jobs:
             swig time xsltproc zstd \
             curl ca-certificates
 
-      - name: Check build environment
-        run: |
-          set -e
-          echo "===== Disk space ====="
-          df -h .
-
-          echo "===== Build tools ====="
-          command -v gcc
-          command -v flex
-          command -v m4
-          m4 --version | head -n 1
-
       - name: Configure OpenWrt
         run: |
           set -e
@@ -61,6 +49,10 @@ jobs:
           CONFIG_TARGET_rockchip=y
           CONFIG_TARGET_rockchip_armv8=y
           CONFIG_TARGET_rockchip_armv8_DEVICE_onething_oec=y
+          CONFIG_PACKAGE_kmod-rtw88-8822bu=y
+          CONFIG_PACKAGE_wpad-basic-mbedtls=y
+          CONFIG_PACKAGE_iw=y
+          CONFIG_PACKAGE_iwinfo=y
           EOF
 
           make defconfig
@@ -69,37 +61,26 @@ jobs:
             'CONFIG_TARGET_rockchip_armv8_DEVICE_onething_oec=y' \
             .config
 
-          echo "OEC target configured"
+          grep -qx \
+            'CONFIG_PACKAGE_kmod-rtw88-8822bu=y' \
+            .config
+
+          echo "OEC wireless configuration: OK"
 
       - name: Build OpenWrt tools
         run: |
           cd openwrt
-          make -j2 V=s tools/install
+          make -j2 tools/install
 
       - name: Build OpenWrt toolchain
         run: |
           cd openwrt
-          make -j2 V=s toolchain/install
-
-      - name: Verify cross compiler
-        run: |
-          set -e
-
-          echo "===== Cross compiler ====="
-
-          find openwrt/staging_dir \
-            -type f \
-            -name '*gcc' \
-            -path '*/bin/*' \
-            -print
-
-          echo "===== Disk space ====="
-          df -h .
+          make -j2 toolchain/install
 
       - name: Prepare OpenWrt kernel
         run: |
           cd openwrt
-          make -j2 V=s target/linux/prepare
+          make -j2 target/linux/prepare
 
       - name: Integrate OEC device tree
         shell: bash
@@ -120,38 +101,40 @@ jobs:
           if ! grep -q \
             'rk3566-onething-edge-cube.dtb' \
             "$KDIR/Makefile"; then
-
-            printf '%s\n' \
-              'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-onething-edge-cube.dtb' \
+            echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-onething-edge-cube.dtb' \
               >> "$KDIR/Makefile"
           fi
 
-          echo "OEC device tree integrated"
-
-      - name: Compile OpenWrt kernel
+      - name: Build OpenWrt kernel
         run: |
           cd openwrt
-          make -j2 V=s target/linux/compile
+          make -j2 target/linux/compile
 
-      - name: Verify OEC DTB
+      - name: Build RTL8822BU driver
+        run: |
+          cd openwrt
+          make -j2 V=s package/kernel/mac80211/compile
+
+      - name: Verify RTL8822BU module
         shell: bash
         run: |
           set -euo pipefail
 
-          DTB=$(find openwrt/build_dir \
-            -name rk3566-onething-edge-cube.dtb \
-            -type f -print -quit)
+          MODULE=$(find openwrt/build_dir \
+            -type f \
+            -name 'rtw88_8822bu.ko' \
+            -print -quit)
 
-          test -n "$DTB"
-          test -s "$DTB"
+          test -n "$MODULE"
+          test -s "$MODULE"
 
           mkdir -p output
-          cp "$DTB" output/
+          cp "$MODULE" output/
 
-          echo "OEC OpenWrt kernel DTB: OK"
+          echo "RTL8822BU driver compilation: OK"
 
-      - name: Upload OEC DTB
+      - name: Upload wireless driver
         uses: actions/upload-artifact@v4
         with:
-          name: oec-openwrt-dtb
+          name: oec-rtl8822bu
           path: output/
