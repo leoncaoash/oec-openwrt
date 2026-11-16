@@ -133,7 +133,7 @@ jobs:
       - name: Build complete OpenWrt
         run: |
           cd openwrt
-          make -j2
+          make -j1 V=s
 
       - name: Collect firmware files
         shell: bash
