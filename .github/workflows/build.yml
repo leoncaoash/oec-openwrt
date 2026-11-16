@@ -1,4 +1,3 @@
-
 name: OEC OpenWrt
 
 on:
@@ -8,14 +7,13 @@ jobs:
   build-oec:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
-
     steps:
-      - name: Checkout project
+      - name: Checkout OEC project
         uses: actions/checkout@v4
         with:
           path: project
 
-      - name: Checkout OpenWrt
+      - name: Checkout OpenWrt 25.12.6
         uses: actions/checkout@v4
         with:
           repository: openwrt/openwrt
@@ -26,28 +24,36 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential clang flex bison gawk \
-            gcc-multilib gettext git libncurses-dev \
-            libssl-dev libelf-dev python3 \
-            python3-setuptools python3-yaml \
-            python3-requests rsync unzip zlib1g-dev \
-            file wget swig time xsltproc zstd \
-            curl ca-certificates
+            build-essential clang flex bison gawk gcc-multilib gettext git \
+            libncurses-dev libssl-dev libelf-dev python3 python3-setuptools \
+            python3-yaml python3-requests rsync unzip zlib1g-dev file wget \
+            swig time xsltproc zstd curl ca-certificates
 
-      - name: Prepare OEC configuration
+      - name: Prepare OEC device and first boot defaults
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           cd openwrt
-
           test -s ../project/files/oec.mk
           test -s ../project/files/rk3566-onething-edge-cube.dts
+          test -s ../project/files/etc/uci-defaults/99-oec-network
+          cat ../project/files/oec.mk >> target/linux/rockchip/image/armv8.mk
+          mkdir -p files/etc/uci-defaults
+          cp ../project/files/etc/uci-defaults/99-oec-network files/etc/uci-defaults/
+          chmod +x files/etc/uci-defaults/99-oec-network
+          sh -n files/etc/uci-defaults/99-oec-network
 
-          cat ../project/files/oec.mk \
-            >> target/linux/rockchip/image/armv8.mk
-
+      - name: Install package feeds
+        run: |
+          cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Configure firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd openwrt
           cat > .config <<'EOF'
           CONFIG_TARGET_rockchip=y
           CONFIG_TARGET_rockchip_armv8=y
@@ -70,31 +76,26 @@ jobs:
           CONFIG_PACKAGE_block-mount=y
           CONFIG_PACKAGE_kmod-fs-ext4=y
           EOF
-
           make defconfig
+          for package in \
+            kmod-usb-net-rtl8152 kmod-rtw88-8822bu wpad-basic-mbedtls \
+            luci luci-i18n-base-zh-cn ttyd luci-app-ttyd \
+            kmod-wireguard wireguard-tools luci-proto-wireguard zerotier \
+            block-mount kmod-fs-ext4; do
+            grep -Fxq "CONFIG_PACKAGE_${package}=y" .config || {
+              echo "MISSING REQUIRED PACKAGE CONFIG: ${package}" >&2
+              exit 1
+            }
+          done
+          grep -Fxq 'CONFIG_TARGET_rockchip_armv8_DEVICE_onething_oec=y' .config
+          echo 'All required options selected'
 
-          grep -qx \
-            'CONFIG_TARGET_rockchip_armv8_DEVICE_onething_oec=y' \
-            .config
-
-          grep -qx \
-            'CONFIG_PACKAGE_kmod-usb-net-rtl8152=y' \
-            .config
-
-          grep -qx \
-            'CONFIG_PACKAGE_kmod-rtw88-8822bu=y' \
-            .config
-
-          echo "RTL8153 driver: selected"
-          echo "RTL8822BU driver: selected"
-          echo "OEC configuration: OK"
-
-      - name: Build OpenWrt tools
+      - name: Build tools
         run: |
           cd openwrt
           make -j2 tools/install
 
-      - name: Build OpenWrt toolchain
+      - name: Build toolchain
         run: |
           cd openwrt
           make -j2 toolchain/install
@@ -108,106 +109,52 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          KDIR=$(find openwrt/build_dir \
-            -type d \
-            -path '*/linux-*/arch/arm64/boot/dts/rockchip' \
-            -print -quit)
-
+          KDIR=$(find openwrt/build_dir -type d \
+            -path '*/linux-*/arch/arm64/boot/dts/rockchip' -print -quit)
           test -n "$KDIR"
           test -f "$KDIR/Makefile"
-
-          cp project/files/rk3566-onething-edge-cube.dts \
-            "$KDIR/"
-
-          if ! grep -q \
-            'rk3566-onething-edge-cube.dtb' \
-            "$KDIR/Makefile"; then
-            echo \
-              'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-onething-edge-cube.dtb' \
+          cp project/files/rk3566-onething-edge-cube.dts "$KDIR/"
+          if ! grep -Fq 'rk3566-onething-edge-cube.dtb' "$KDIR/Makefile"; then
+            printf '%s\n' 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-onething-edge-cube.dtb' \
               >> "$KDIR/Makefile"
           fi
-
-          echo "OEC device tree integrated"
 
       - name: Build complete OpenWrt
         run: |
           cd openwrt
           make -j1 V=s
 
-      - name: Collect firmware files
+      - name: Collect and check firmware
         shell: bash
         run: |
           set -euo pipefail
-
-          KERNEL=$(find openwrt/build_dir \
-            -type f \
-            -path '*/linux-*/arch/arm64/boot/Image' \
-            -print -quit)
-
-          DTB=$(find openwrt/build_dir \
-            -type f \
-            -name 'rk3566-onething-edge-cube.dtb' \
-            -print -quit)
-
-          ROOTFS=$(find openwrt/build_dir \
-            -type f \
-            -name 'root.squashfs' \
-            -print -quit)
-
-          test -n "$KERNEL"
-          test -n "$DTB"
-          test -n "$ROOTFS"
-
-          test -s "$KERNEL"
-          test -s "$DTB"
-          test -s "$ROOTFS"
-
+          KERNEL=$(find openwrt/build_dir -type f \
+            -path '*/linux-*/arch/arm64/boot/Image' -print -quit)
+          DTB=$(find openwrt/build_dir -type f \
+            -name 'rk3566-onething-edge-cube.dtb' -print -quit)
+          ROOTFS=$(find openwrt/build_dir -type f \
+            -name 'root.squashfs' -print -quit)
+          test -n "$KERNEL" && test -s "$KERNEL"
+          test -n "$DTB" && test -s "$DTB"
+          test -n "$ROOTFS" && test -s "$ROOTFS"
           mkdir -p output
-
           cp "$KERNEL" output/kernel.img
           cp "$DTB" output/rockchip.dtb
           cp "$ROOTFS" output/rootfs.squashfs
-
-          echo "OEC firmware files collected"
-
-      - name: Verify firmware
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          MAGIC_KERNEL=$(dd if=output/kernel.img \
-            bs=1 skip=56 count=4 2>/dev/null |
-            od -An -tx1 | tr -d ' \n')
-
-          MAGIC_DTB=$(od -An -tx1 -N4 \
-            output/rockchip.dtb | tr -d ' \n')
-
-          MAGIC_ROOTFS=$(od -An -tx1 -N4 \
-            output/rootfs.squashfs | tr -d ' \n')
-
-          test "$MAGIC_KERNEL" = "41524d64"
-          test "$MAGIC_DTB" = "d00dfeed"
-          test "$MAGIC_ROOTFS" = "68737173"
-
-          KERNEL_SIZE=$(stat -c%s output/kernel.img)
-          DTB_SIZE=$(stat -c%s output/rockchip.dtb)
-          ROOTFS_SIZE=$(stat -c%s output/rootfs.squashfs)
-
-          test $((KERNEL_SIZE + DTB_SIZE)) -le 67108864
-          test "$ROOTFS_SIZE" -le 268435456
-
-          echo "===== Firmware files ====="
+          kmagic=$(dd if=output/kernel.img bs=1 skip=56 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+          dmagic=$(od -An -tx1 -N4 output/rockchip.dtb | tr -d ' \n')
+          smagic=$(od -An -tx1 -N4 output/rootfs.squashfs | tr -d ' \n')
+          test "$kmagic" = '41524d64'
+          test "$dmagic" = 'd00dfeed'
+          test "$smagic" = '68737173'
+          test $(($(stat -c%s output/kernel.img) + $(stat -c%s output/rockchip.dtb))) -le 67108864
+          test "$(stat -c%s output/rootfs.squashfs)" -le 268435456
+          sha256sum output/* > output/SHA256SUMS
           ls -lh output/
 
-          echo "===== SHA256 ====="
-          sha256sum output/*
-
-          echo "OEC firmware verification: OK"
-
-      - name: Upload firmware
+      - name: Upload firmware candidate
         uses: actions/upload-artifact@v4
         with:
-          name: OEC-OpenWrt-Firmware
+          name: OEC-OpenWrt-Candidate
           path: output/
           if-no-files-found: error
