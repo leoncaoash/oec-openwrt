@@ -1,0 +1,59 @@
+#!/bin/sh
+# OEC first-boot defaults. Use only on fresh overlay.
+set -eu
+
+uci -q batch <<'EOF'
+set network.lan=interface
+set network.lan.proto='static'
+set network.lan.device='eth1'
+set network.lan.ipaddr='192.168.88.1'
+set network.lan.netmask='255.255.255.0'
+set network.wan=interface
+set network.wan.proto='dhcp'
+set network.wan.device='eth0'
+set network.wan6=interface
+set network.wan6.proto='none'
+set dhcp.lan=dhcp
+set dhcp.lan.interface='lan'
+set dhcp.lan.start='100'
+set dhcp.lan.limit='100'
+set dhcp.lan.leasetime='12h'
+set dhcp.lan.ignore='0'
+set dhcp.wan=dhcp
+set dhcp.wan.interface='wan'
+set dhcp.wan.ignore='1'
+EOF
+
+# Replace the stock firewall zones to avoid duplicate anonymous LAN/WAN zones.
+cat > /etc/config/firewall <<'EOF'
+config defaults
+        option input 'REJECT'
+        option output 'ACCEPT'
+        option forward 'REJECT'
+        option synflood_protect '1'
+
+config zone
+        option name 'lan'
+        list network 'lan'
+        option input 'ACCEPT'
+        option output 'ACCEPT'
+        option forward 'ACCEPT'
+
+config zone
+        option name 'wan'
+        list network 'wan'
+        option input 'REJECT'
+        option output 'ACCEPT'
+        option forward 'REJECT'
+        option masq '1'
+        option mtu_fix '1'
+
+config forwarding
+        option src 'lan'
+        option dest 'wan'
+EOF
+
+uci commit network
+uci commit dhcp
+uci commit firewall
+exit 0
