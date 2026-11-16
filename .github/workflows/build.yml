@@ -2,6 +2,15 @@ name: OEC OpenWrt
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Check configuration or build firmware"
+        type: choice
+        required: true
+        default: check
+        options:
+          - check
+          - build
 
 jobs:
   build-oec:
@@ -78,6 +87,7 @@ jobs:
           CONFIG_PACKAGE_kmod-fs-ext4=y
           EOF
           make defconfig
+          grep -Fxq 'CONFIG_LUCI_LANG_zh_Hans=y' .config
           for package in \
             kmod-usb-net-rtl8152 kmod-rtw88-8822bu wpad-basic-mbedtls \
             luci luci-i18n-base-zh-cn ttyd luci-app-ttyd \
@@ -92,21 +102,25 @@ jobs:
           echo 'All required options selected'
 
       - name: Build tools
+        if: inputs.mode == 'build'
         run: |
           cd openwrt
           make -j2 tools/install
 
       - name: Build toolchain
+        if: inputs.mode == 'build'
         run: |
           cd openwrt
           make -j2 toolchain/install
 
       - name: Prepare Linux kernel
+        if: inputs.mode == 'build'
         run: |
           cd openwrt
           make -j2 target/linux/prepare
 
       - name: Integrate OEC device tree
+        if: inputs.mode == 'build'
         shell: bash
         run: |
           set -euo pipefail
@@ -121,11 +135,13 @@ jobs:
           fi
 
       - name: Build complete OpenWrt
+        if: inputs.mode == 'build'
         run: |
           cd openwrt
           make -j1 V=s
 
       - name: Collect and check firmware
+        if: inputs.mode == 'build'
         shell: bash
         run: |
           set -euo pipefail
@@ -154,6 +170,7 @@ jobs:
           ls -lh output/
 
       - name: Upload firmware candidate
+        if: inputs.mode == 'build'
         uses: actions/upload-artifact@v4
         with:
           name: OEC-OpenWrt-Candidate
