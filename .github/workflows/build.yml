@@ -54,6 +54,7 @@ jobs:
           CONFIG_TARGET_rockchip_armv8_DEVICE_onething_oec=y
           CONFIG_TARGET_ROOTFS_SQUASHFS=y
           CONFIG_TARGET_ROOTFS_PARTSIZE=256
+          CONFIG_PACKAGE_kmod-usb-net-rtl8152=y
           CONFIG_PACKAGE_kmod-rtw88-8822bu=y
           CONFIG_PACKAGE_wpad-basic-mbedtls=y
           CONFIG_PACKAGE_iw=y
@@ -77,9 +78,15 @@ jobs:
             .config
 
           grep -qx \
+            'CONFIG_PACKAGE_kmod-usb-net-rtl8152=y' \
+            .config
+
+          grep -qx \
             'CONFIG_PACKAGE_kmod-rtw88-8822bu=y' \
             .config
 
+          echo "RTL8153 driver: selected"
+          echo "RTL8822BU driver: selected"
           echo "OEC configuration: OK"
 
       - name: Build OpenWrt tools
