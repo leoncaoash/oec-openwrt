@@ -51,11 +51,18 @@ jobs:
           chmod +x files/etc/uci-defaults/99-oec-network
           sh -n files/etc/uci-defaults/99-oec-network
 
+      
       - name: Update package feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
-          ./scripts/feeds install luci luci-i18n-base-zh-cn luci-app-ttyd ttyd zerotier
+          ./scripts/feeds install luci
+          ./scripts/feeds install luci-i18n-base-zh-cn
+          ./scripts/feeds install luci-app-ttyd
+          ./scripts/feeds install ttyd
+          ./scripts/feeds install zerotier
+          ./scripts/feeds install luci-proto-wireguard
+
 
       - name: Configure firmware
         shell: bash
