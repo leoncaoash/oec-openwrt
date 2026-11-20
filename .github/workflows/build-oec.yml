@@ -174,14 +174,21 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Must be the TARGET kernel tree (used by the image build), not the
+          # toolchain headers tree, which also contains an identical path.
           KDIR=$(find openwrt/build_dir -type d \
-            -path '*/linux-*/arch/arm64/boot/dts/rockchip' \
-            -print -quit)
+            -path '*/build_dir/target-*/linux-*/linux-*/arch/arm64/boot/dts/rockchip' \
+            | sort | sed -n '1p')
 
           test -n "$KDIR"
+          case "$KDIR" in
+            openwrt/build_dir/target-*) ;;
+            *) echo "WRONG KERNEL TREE: $KDIR"; exit 1 ;;
+          esac
           test -f "$KDIR/Makefile"
 
           cp project/files/rk3566-onething-edge-cube.dts "$KDIR/"
+          test -s "$KDIR/rk3566-onething-edge-cube.dts"
 
           if ! grep -Fq 'rk3566-onething-edge-cube.dtb' "$KDIR/Makefile"; then
             printf '%s\n' \
