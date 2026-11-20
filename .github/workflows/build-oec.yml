@@ -107,6 +107,7 @@ jobs:
           # modules must be built into the firmware.
           CONFIG_PACKAGE_kmod-nft-tproxy=y
           CONFIG_PACKAGE_kmod-inet-diag=y
+          CONFIG_PACKAGE_kmod-netlink-diag=y
           CONFIG_PACKAGE_kmod-nf-conntrack-netlink=y
           # CONFIG_PACKAGE_dnsmasq is not set
           CONFIG_PACKAGE_dnsmasq-full=y
@@ -130,7 +131,8 @@ jobs:
             kmod-wireguard wireguard-tools \
             luci-proto-wireguard zerotier \
             block-mount kmod-fs-ext4 kmod-fs-vfat \
-            kmod-nft-tproxy kmod-inet-diag kmod-nf-conntrack-netlink \
+            kmod-nft-tproxy kmod-inet-diag kmod-netlink-diag \
+            kmod-nf-conntrack-netlink \
             dnsmasq-full ip-full bash curl ruby ruby-yaml unzip; do
 
             grep -Fxq "CONFIG_PACKAGE_${package}=y" .config || {
