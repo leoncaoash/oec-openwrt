@@ -62,6 +62,9 @@ jobs:
           ./scripts/feeds install ttyd
           ./scripts/feeds install zerotier
           ./scripts/feeds install luci-proto-wireguard
+          for p in bash curl ruby ruby-yaml unzip; do
+            ./scripts/feeds install "$p" || true
+          done
 
 
       - name: Configure firmware
@@ -97,6 +100,23 @@ jobs:
 
           CONFIG_PACKAGE_block-mount=y
           CONFIG_PACKAGE_kmod-fs-ext4=y
+          CONFIG_PACKAGE_kmod-fs-vfat=y
+
+          # OpenClash (nftables mode) dependencies.
+          # Official repo kmods do not match this custom kernel, so kernel
+          # modules must be built into the firmware.
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+          CONFIG_PACKAGE_kmod-inet-diag=y
+          CONFIG_PACKAGE_kmod-nf-conntrack-netlink=y
+          # CONFIG_PACKAGE_dnsmasq is not set
+          CONFIG_PACKAGE_dnsmasq-full=y
+          # CONFIG_PACKAGE_ip-tiny is not set
+          CONFIG_PACKAGE_ip-full=y
+          CONFIG_PACKAGE_bash=y
+          CONFIG_PACKAGE_curl=y
+          CONFIG_PACKAGE_ruby=y
+          CONFIG_PACKAGE_ruby-yaml=y
+          CONFIG_PACKAGE_unzip=y
           EOF
 
           make defconfig
@@ -109,7 +129,9 @@ jobs:
             ttyd luci-app-ttyd \
             kmod-wireguard wireguard-tools \
             luci-proto-wireguard zerotier \
-            block-mount kmod-fs-ext4; do
+            block-mount kmod-fs-ext4 kmod-fs-vfat \
+            kmod-nft-tproxy kmod-inet-diag kmod-nf-conntrack-netlink \
+            dnsmasq-full ip-full bash curl ruby ruby-yaml unzip; do
 
             grep -Fxq "CONFIG_PACKAGE_${package}=y" .config || {
               echo "MISSING PACKAGE: ${package}"
@@ -119,6 +141,14 @@ jobs:
 
           grep -Fxq \
             'CONFIG_TARGET_rockchip_armv8_DEVICE_onething_oec=y' .config
+
+          # Conflicting providers must be gone, otherwise the image fails late.
+          if grep -Fxq 'CONFIG_PACKAGE_dnsmasq=y' .config; then
+            echo "CONFLICT: dnsmasq is still enabled"; exit 1
+          fi
+          if grep -Fxq 'CONFIG_PACKAGE_ip-tiny=y' .config; then
+            echo "CONFLICT: ip-tiny is still enabled"; exit 1
+          fi
 
           echo "OEC configuration verified"
 
@@ -190,6 +220,7 @@ jobs:
           cp "$KERNEL" output/kernel.img
           cp "$DTB" output/rockchip.dtb
           cp "$ROOTFS" output/rootfs.squashfs
+          cp openwrt/.config output/build.config
 
           kmagic=$(dd if=output/kernel.img bs=1 skip=56 count=4 \
             2>/dev/null | od -An -tx1 | tr -d ' \n')
